@@ -6,7 +6,7 @@ ssize_t read_(int fd, void* buf, size_t count)
     ssize_t readCount = 0;
     while (readed < count)
     {
-        readCount = read(fd, buf + readed, count);
+        readCount = read(fd, buf + readed, count - readed);
         if (readCount == -1 || readCount == 0)
         {
             break;
@@ -17,8 +17,6 @@ ssize_t read_(int fd, void* buf, size_t count)
     {
         return readCount;
     }
-    char* cbuf = (char*)buf;
-    cbuf[readed] = '\0';
     return readed;
 }
 
