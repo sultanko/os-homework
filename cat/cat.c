@@ -12,7 +12,16 @@ int main()
         if (readed == 0)
         {
             return 0;
+        } 
+        else if (readed == -1) 
+        {
+            perror("error while reading");
+            return 1;
         }
-        write_(STDOUT_FILENO, buf, readed);
+        else if (write_(STDOUT_FILENO, buf, readed) == -1) 
+        {
+            perror("error while writing");
+            return 2;
+        }
     }
 }

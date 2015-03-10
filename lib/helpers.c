@@ -7,15 +7,15 @@ ssize_t read_(int fd, void* buf, size_t count)
     while (readed < count)
     {
         readCount = read(fd, buf + readed, count - readed);
-        if (readCount == -1 || readCount == 0)
+        if (readCount == -1) 
+        {
+            return -1;
+        }
+        else if (readCount == 0)
         {
             break;
         }
         readed += readCount;
-    }
-    if (readCount == -1)
-    {
-        return readCount;
     }
     return readed;
 }
