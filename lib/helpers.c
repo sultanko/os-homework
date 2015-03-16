@@ -1,4 +1,5 @@
 #include "helpers.h"
+#include <stdio.h>
 
 ssize_t read_(int fd, void* buf, size_t count) 
 {
@@ -34,4 +35,30 @@ ssize_t write_(int fd, void* buf, size_t count)
         writted += writeCount;
     }
     return writted;
+}
+
+ssize_t read_until(int fd, void* buf, size_t count, char delimeter)
+{
+    ssize_t readCount = 0;
+    size_t readed = 0;
+    char chr;
+    char* array = (char*)buf;
+    while (readed < count)
+    {
+        readCount = read_(fd, &chr, 1);
+        if (readCount < 0)
+        {
+            return readCount;
+        }
+        if (readCount == 0)
+        {
+            break;
+        }
+        array[readed++] = chr;
+        if (chr == delimeter)
+        {
+            break;
+        }
+    }
+    return readed;
 }
