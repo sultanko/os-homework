@@ -7,9 +7,6 @@
 int main(int argc, char* argv[]) {
     char buf[4096];
 
-    // char* args[] = {"ls", "/bin", NULL};
-    // int res = spawn("ls", args);
-    // return 0;
     char** argvs = (char**)malloc(sizeof(char*) * (argc + 2));
     int i;
     for (i = 0; i < argc - 1; i++)
@@ -22,12 +19,12 @@ int main(int argc, char* argv[]) {
         ssize_t readed = read_until(STDIN_FILENO, buf, BUF_SIZE, '\n');
         if (readed == 0)
         {
-            return 0;
+            break;
         } 
         else if (readed == -1) 
         {
             perror("error while reading");
-            return 1;
+            break;
         }
         if (buf[readed - 1] == '\n') {
             buf[readed -1] = 0;

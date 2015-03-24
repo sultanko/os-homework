@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 ssize_t read_(int fd, void* buf, size_t count) 
 {
@@ -69,11 +71,14 @@ int spawn(const char* file, char* const argv[])
 {
     int status = 0;
     pid_t childPid = -1;
+    int default_stderr = dup(2);
+    int devNull = open("/dev/null", O_WRONLY);
     switch (childPid = fork()) {
         case -1:
             status = -1;
             break;
         case 0:
+            dup2(devNull, 2);
             execvp(file, argv);
         default:
             while (waitpid(childPid, &status, 0) == -1) {
@@ -84,5 +89,9 @@ int spawn(const char* file, char* const argv[])
             }
             break;
     }
+    if (devNull != -1) {
+        close(devNull);
+    }
+    dup2(default_stderr, 2);
     return status;
 }
