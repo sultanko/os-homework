@@ -75,7 +75,6 @@ int spawn(const char* file, char* const argv[])
             break;
         case 0:
             execvp(file, argv);
-            _exit(127);
         default:
             while (waitpid(childPid, &status, 0) == -1) {
                 if (errno != EINTR) {
