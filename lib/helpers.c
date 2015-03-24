@@ -1,5 +1,7 @@
 #include "helpers.h"
 #include <stdio.h>
+#include <sys/wait.h>
+#include <errno.h>
 
 ssize_t read_(int fd, void* buf, size_t count) 
 {
@@ -61,4 +63,27 @@ ssize_t read_until(int fd, void* buf, size_t count, char delimeter)
         }
     }
     return readed;
+}
+
+int spawn(const char* file, char* const argv[]) 
+{
+    int status = 0;
+    pid_t childPid = -1;
+    switch (childPid = fork()) {
+        case -1:
+            status = -1;
+            break;
+        case 0:
+            execvp(file, argv);
+            _exit(127);
+        default:
+            while (waitpid(childPid, &status, 0) == -1) {
+                if (errno != EINTR) {
+                    status = -1;
+                    break;
+                }
+            }
+            break;
+    }
+    return status;
 }
