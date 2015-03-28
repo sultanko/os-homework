@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <assert.h>
 
-#define BUF_SIZE 20
+#define BUF_SIZE 4096
 
 int main()
 {
