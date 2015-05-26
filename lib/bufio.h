@@ -1,6 +1,7 @@
 #ifndef BUFIO_H_
 #define BUFIO_H_
 
+#include <unistd.h>
 #include <stdlib.h>
 
 struct buf_t
