@@ -5,8 +5,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <signal.h>
 
-#define FERROR(_X) if ((_X) == -1) { _exit(EXIT_FAILURE); }
+#define FERROR(_X) if ((_X) == -1) { return -1; }
 
 ssize_t read_(int fd, void* buf, size_t count) 
 {
@@ -74,7 +75,6 @@ int spawn(const char* file, char* const argv[])
 {
     int status = 0;
     pid_t childPid = -1;
-    dprintf(STDERR_FILENO, "%s arg: %s\n", file, argv[1]);
     int default_stderr = dup(STDERR_FILENO);
     int devNull = open("/dev/null", O_WRONLY);
     switch (childPid = fork()) {
@@ -97,7 +97,6 @@ int spawn(const char* file, char* const argv[])
         close(devNull);
     }
     dup2(default_stderr, STDERR_FILENO);
-    // dprintf(STDERR_FILENO, "Spawn done %d\n", status);
     return status;
 }
 
@@ -107,85 +106,74 @@ int exec(struct execargs_t* program)
     switch (childPid = fork()) {
         case -1:
             return -1;
-            break;
         case 0:
             execvp(program->command, program->args);
-        default:
             break;
+        default:
+            return childPid;
     }
-    // dprintf(STDERR_FILENO, "Spawn done %d\n", status);
-    return childPid;
+}
+
+void sig_handler(int signo)
+{
+    if (signo == SIGINT)
+    {
+        while (wait(NULL) != -1)
+        {
+        }
+    }
 }
 
 int runpiped(struct execargs_t** programs, size_t n)
 {
-    // dprintf(STDOUT_FILENO, "Start runpiped\n");
-    int** pipefd = (int**)malloc(sizeof(int*) * (n-1));
+    signal(SIGINT, sig_handler);
+    int (*pipefd)[2] = (int(*)[2])malloc(sizeof(int[2]) * (n-1));
     int* childPid = (int*)malloc(sizeof(int*) * n);
-    for (size_t i = 0; i < n-1; ++i)
-    {
-        pipefd[i] = (int*)malloc(sizeof(int)*2);
-        FERROR(pipe(pipefd[i]));
-    }
-    // dprintf(STDOUT_FILENO, "Create pipes\n");
     int default_stdin = dup(STDIN_FILENO);
     int default_stdout = dup(STDOUT_FILENO);
     int readPipe = -1;
     int writePipe = 0;
     for (size_t i = 0; i < n; ++i)
     {
-        // dprintf(STDOUT_FILENO, "First dup\n");
         if (i != 0)
         {
-            // dup2(pipefd[readPipe][0], STDIN_FILENO);
-            // close(STDIN_FILENO);
-            dup2(pipefd[readPipe][0], STDIN_FILENO);
-            close(pipefd[readPipe][0]);
+            FERROR(dup2(pipefd[readPipe][0], STDIN_FILENO));
+            FERROR(close(pipefd[readPipe][0]));
         }
 
         if (i != n - 1)
         {
-            // dup2(pipefd[writePipe][1], STDOUT_FILENO);
-            // close(STDOUT_FILENO);
-            dup2(pipefd[writePipe][1], STDOUT_FILENO);
-            close(pipefd[writePipe][1]);
-            // dprintf(STDERR_FILENO, "Second dup\n");
+            FERROR(pipe(pipefd[writePipe]));
+            FERROR(dup2(pipefd[writePipe][1], STDOUT_FILENO));
+            FERROR(close(pipefd[writePipe][1]));
         }
         else
         {
-            close(STDOUT_FILENO);
-            dup2(default_stdout, STDOUT_FILENO);
+            FERROR(dup2(default_stdout, STDOUT_FILENO));
         }
-        // dprintf(STDERR_FILENO, "Exec %s\n", programs[i]->command);
         childPid[i] = exec(programs[i]);
-        // dprintf(STDERR_FILENO, "Executed %s %d\n", programs[i]->command, childPid[i]);
-        // if (readPipe != -1)
-        // {
-        //     close(pipefd[readPipe][0]);
-        // }
-        // if (i != n-1)
-        // {
-        //     close(pipefd[writePipe][1]);
-        // }
         ++readPipe;
         ++writePipe;
     }
-    dup2(default_stdin, STDIN_FILENO);
+    FERROR(dup2(default_stdin, STDIN_FILENO));
     size_t countPrograms = 0;
     int status = 0;
-    for (size_t cp = 0; cp < n; ++cp)
+    while (countPrograms < n)
     {
-        int cpid = waitpid(childPid[cp], &status, 0);
-        for (size_t i = 0; i < n; ++i)
+        int cpid = wait(&status);
+        FERROR(cpid);
+        if (countPrograms == 0)
         {
-            if (cpid == childPid[i])
+            for (size_t i = 0; i < n; ++i)
             {
-                // dprintf(STDERR_FILENO, "Waited %d %zu\n", cpid, i);
-                // if (i != 0) { close(pipefd[i-1][0]); }
-                // if (i != n - 1) { close(pipefd[i][1]); }
-                break;
+                if (cpid != childPid[i])
+                {
+                    kill(childPid[i], SIGINT); 
+                }
             }
         }
         ++countPrograms;
     }
+    free(pipefd);
+    free(childPid);
 }
