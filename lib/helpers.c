@@ -7,7 +7,14 @@
 #include <stdlib.h>
 #include <signal.h>
 
-#define FERROR(_X) if ((_X) == -1) { return -1; }
+#define RERROR(_X) \
+    if (_X == -1) { \
+        kill(0, SIGINT); \
+        free(pipefd); \
+        free(childPid); \
+        sigaction(SIGINT, &old_action, NULL); \
+        return (sigint_catched == 1 ? 0 : -1); \
+    }
 
 ssize_t read_(int fd, void* buf, size_t count) 
 {
@@ -103,21 +110,33 @@ int spawn(const char* file, char* const argv[])
 int exec(struct execargs_t* program)
 {
     pid_t childPid = -1;
+    // dprintf(STDERR_FILENO, "Exec command %s\n", program->command);
+    int i = -1;
+    do
+    {
+        ++i;
+        // dprintf(STDERR_FILENO, "Exec arg %s\n", program->args[i]);
+    } while (program->args[i] != NULL);
+
     switch (childPid = fork()) {
         case -1:
-            return -1;
+            // dprintf(STDERR_FILENO, "Forked errno %d\n", errno);
+            break;
         case 0:
             execvp(program->command, program->args);
             break;
-        default:
-            return childPid;
     }
+    // dprintf(STDERR_FILENO, "Forked errno %d\n", errno);
+    return childPid;
 }
+
+int sigint_catched = 0;
 
 void sig_handler(int signo)
 {
     if (signo == SIGINT)
     {
+        sigint_catched = 1;
         while (wait(NULL) != -1)
         {
         }
@@ -126,7 +145,13 @@ void sig_handler(int signo)
 
 int runpiped(struct execargs_t** programs, size_t n)
 {
-    signal(SIGINT, sig_handler);
+    struct sigaction new_action;
+    struct sigaction old_action;
+    new_action.sa_handler = sig_handler;
+    sigemptyset(&new_action.sa_mask);
+    new_action.sa_flags = 0;
+    sigint_catched = 0;
+    sigaction(SIGINT, &new_action, &old_action);
     int (*pipefd)[2] = (int(*)[2])malloc(sizeof(int[2]) * (n-1));
     int* childPid = (int*)malloc(sizeof(int*) * n);
     int default_stdin = dup(STDIN_FILENO);
@@ -137,31 +162,40 @@ int runpiped(struct execargs_t** programs, size_t n)
     {
         if (i != 0)
         {
-            FERROR(dup2(pipefd[readPipe][0], STDIN_FILENO));
-            FERROR(close(pipefd[readPipe][0]));
+            // dprintf(STDERR_FILENO, "Check read dup\n");
+            RERROR(dup2(pipefd[readPipe][0], STDIN_FILENO));
+            // dprintf(STDERR_FILENO, "Check close read\n");
+            RERROR(close(pipefd[readPipe][0]));
         }
 
         if (i != n - 1)
         {
-            FERROR(pipe(pipefd[writePipe]));
-            FERROR(dup2(pipefd[writePipe][1], STDOUT_FILENO));
-            FERROR(close(pipefd[writePipe][1]));
+            // dprintf(STDERR_FILENO, "Check create pipe\n");
+            RERROR(pipe(pipefd[writePipe]));
+            // dprintf(STDERR_FILENO, "Check write dup\n");
+            RERROR(dup2(pipefd[writePipe][1], STDOUT_FILENO));
+            // dprintf(STDERR_FILENO, "Check close write\n");
+            RERROR(close(pipefd[writePipe][1]));
         }
         else
         {
-            FERROR(dup2(default_stdout, STDOUT_FILENO));
+            // dprintf(STDERR_FILENO, "Check dup stdout\n");
+            RERROR(dup2(default_stdout, STDOUT_FILENO));
         }
         childPid[i] = exec(programs[i]);
+        // dprintf(STDERR_FILENO, "Check exec\n");
+        RERROR(childPid[i]);
         ++readPipe;
         ++writePipe;
     }
-    FERROR(dup2(default_stdin, STDIN_FILENO));
+    // dprintf(STDERR_FILENO, "Check dup stdin\n");
+    RERROR(dup2(default_stdin, STDIN_FILENO));
     size_t countPrograms = 0;
-    int status = 0;
     while (countPrograms < n)
     {
-        int cpid = wait(&status);
-        FERROR(cpid);
+        int cpid = wait(NULL);
+        // dprintf(STDERR_FILENO, "Check wait %d\n", cpid);
+        RERROR(cpid);
         if (countPrograms == 0)
         {
             for (size_t i = 0; i < n; ++i)
@@ -174,6 +208,8 @@ int runpiped(struct execargs_t** programs, size_t n)
         }
         ++countPrograms;
     }
+    sigaction(SIGINT, &old_action, NULL); \
     free(pipefd);
     free(childPid);
+    return 0;
 }

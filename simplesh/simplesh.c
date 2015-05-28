@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include "helpers.h"
+#include <helpers.h>
 
 #include <stdlib.h>
 #include <signal.h>
@@ -15,10 +15,10 @@ int main(int argc, char* argv[]) {
     while (1)
     {
         FERROR(write(STDOUT_FILENO, "$", 1));
-        int readed=read_until(STDIN_FILENO, buf, BUF_SIZE, '\n');
+        int readed = read_until(STDIN_FILENO, buf, BUF_SIZE, '\n');
         if (readed == 0)
         {
-            break;
+            exit(EXIT_SUCCESS);
         }
         FERROR(readed);
         int countPrograms = 1;
@@ -38,30 +38,22 @@ int main(int argc, char* argv[]) {
         int index_program = 0;
         for (int i = 1; i < readed; ++i)
         {
+            if (buf[i] == ' ')
+            {
+                buf[i] = '\0';
+            }
             if (buf[i] == '|' || buf[i] == '\n')
             {
                 buf[i] = '\0';
-                countArgs = 0;
+                countArgs = last_command_index == 0 ? 1 : 0;
                 for (int j = last_command_index; j < i; ++j)
                 {
-                    if (buf[j] == ' ' || buf[j] == '"')
+                    if (j > 0 && buf[j - 1] == '\0' && buf[j] != '\0')
                     {
-                        if (buf[j - 1] != '\0')
-                        {
-                            countArgs++;
-                        }
-                        if (buf[j] == '"')
-                        {
-                            buf[j] = '\0';
-                            ++j;
-                            while (j < i && buf[j] != '"')
-                            {
-                                ++j;
-                            }
-                        }
-                        buf[j] = '\0';
+                        countArgs++;
                     }
                 }
+                // dprintf(STDERR_FILENO, "Count args %d\n", countArgs);
                 char** command_args = (char**) malloc(sizeof(char*)*(countArgs+1));
                 command_args[countArgs] = NULL;
                 last_args_index = last_command_index;
@@ -93,8 +85,7 @@ int main(int argc, char* argv[]) {
             }
         }
         int result = runpiped(programs, index_program);
-        free(programs);
-        free(programs_array);
+        // dprintf(STDOUT_FILENO, "Result runpiped %d\n", result);
     }
 }
 
