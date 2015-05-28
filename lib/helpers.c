@@ -111,12 +111,12 @@ int exec(struct execargs_t* program)
 {
     pid_t childPid = -1;
     // dprintf(STDERR_FILENO, "Exec command %s\n", program->command);
-    int i = -1;
-    do
-    {
-        ++i;
-        // dprintf(STDERR_FILENO, "Exec arg %s\n", program->args[i]);
-    } while (program->args[i] != NULL);
+    // int i = -1;
+    // do
+    // {
+    //     ++i;
+    //     dprintf(STDERR_FILENO, "Exec arg %s\n", program->args[i]);
+    // } while (program->args[i] != NULL);
 
     switch (childPid = fork()) {
         case -1:
