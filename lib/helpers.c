@@ -10,7 +10,6 @@
 #define RERROR(_X) \
     if (_X == -1) { \
         kill(0, SIGINT); \
-        free(pipefd); \
         free(childPid); \
         sigaction(SIGINT, &old_action, NULL); \
         return (sigint_catched == 1 ? 0 : -1); \
@@ -152,30 +151,28 @@ int runpiped(struct execargs_t** programs, size_t n)
     new_action.sa_flags = 0;
     sigint_catched = 0;
     sigaction(SIGINT, &new_action, &old_action);
-    int (*pipefd)[2] = (int(*)[2])malloc(sizeof(int[2]) * (n-1));
+    int pipefd[2];
     int* childPid = (int*)malloc(sizeof(int*) * n);
     int default_stdin = dup(STDIN_FILENO);
     int default_stdout = dup(STDOUT_FILENO);
-    int readPipe = -1;
-    int writePipe = 0;
     for (size_t i = 0; i < n; ++i)
     {
         if (i != 0)
         {
             // dprintf(STDERR_FILENO, "Check read dup\n");
-            RERROR(dup2(pipefd[readPipe][0], STDIN_FILENO));
+            RERROR(dup2(pipefd[0], STDIN_FILENO));
             // dprintf(STDERR_FILENO, "Check close read\n");
-            RERROR(close(pipefd[readPipe][0]));
+            RERROR(close(pipefd[0]));
         }
 
         if (i != n - 1)
         {
             // dprintf(STDERR_FILENO, "Check create pipe\n");
-            RERROR(pipe(pipefd[writePipe]));
+            RERROR(pipe(pipefd));
             // dprintf(STDERR_FILENO, "Check write dup\n");
-            RERROR(dup2(pipefd[writePipe][1], STDOUT_FILENO));
+            RERROR(dup2(pipefd[1], STDOUT_FILENO));
             // dprintf(STDERR_FILENO, "Check close write\n");
-            RERROR(close(pipefd[writePipe][1]));
+            RERROR(close(pipefd[1]));
         }
         else
         {
@@ -185,8 +182,6 @@ int runpiped(struct execargs_t** programs, size_t n)
         childPid[i] = exec(programs[i]);
         // dprintf(STDERR_FILENO, "Check exec\n");
         RERROR(childPid[i]);
-        ++readPipe;
-        ++writePipe;
     }
     // dprintf(STDERR_FILENO, "Check dup stdin\n");
     RERROR(dup2(default_stdin, STDIN_FILENO));
@@ -196,20 +191,23 @@ int runpiped(struct execargs_t** programs, size_t n)
         int cpid = wait(NULL);
         // dprintf(STDERR_FILENO, "Check wait %d\n", cpid);
         RERROR(cpid);
-        if (countPrograms == 0)
+        for (size_t i = 0; i < n; ++i)
         {
-            for (size_t i = 0; i < n; ++i)
+            if (cpid == childPid[i])
             {
-                if (cpid != childPid[i])
+                childPid[i] = -1;
+                for (size_t j = 0; j < i; ++j)
                 {
-                    kill(childPid[i], SIGINT); 
+                    if (childPid[j] != -1)
+                    {
+                        kill(childPid[j], SIGINT); 
+                    }
                 }
             }
         }
         ++countPrograms;
     }
     sigaction(SIGINT, &old_action, NULL); \
-    free(pipefd);
     free(childPid);
     return 0;
 }
