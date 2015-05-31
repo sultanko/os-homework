@@ -168,7 +168,7 @@ int runpiped(struct execargs_t** programs, size_t n)
         if (i != n - 1)
         {
             // dprintf(STDERR_FILENO, "Check create pipe\n");
-            RERROR(pipe(pipefd));
+            RERROR(pipe2(pipefd, O_CLOEXEC));
             // dprintf(STDERR_FILENO, "Check write dup\n");
             RERROR(dup2(pipefd[1], STDOUT_FILENO));
             // dprintf(STDERR_FILENO, "Check close write\n");
