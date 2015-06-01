@@ -149,7 +149,6 @@ int main(int argc, char* argv[]) {
         }
         free(programs_array);
         free(programs);
-        FERROR(result);
         FERROR(buf_flush(dev_null_fd, read_buffer, readed));
     }
     buf_free(read_buffer);

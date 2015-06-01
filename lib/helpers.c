@@ -9,9 +9,10 @@
 
 #define RERROR(_X) \
     if (_X == -1) { \
+        int old_trigger = sigint_catched_runpipe; \
         if (sigint_catched_runpipe == 0) { kill(0, SIGINT); } \
         sigaction(SIGINT, &old_action, NULL); \
-        return (sigint_catched_runpipe == 0 ? -1 : 0); \
+        return (old_trigger == 0 ? -1 : 0); \
     }
 
 ssize_t read_(int fd, void* buf, size_t count) 
