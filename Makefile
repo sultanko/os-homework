@@ -1,28 +1,13 @@
-all: lib/libhelpers.so cat/cat revwords/revwords filter/filter \
-	bufcat/bufcat simplesh/simplesh
+DIRS = lib cat revwords filter \
+	   bufcat simplesh filesender \
+	   bipipe
 
-lib/libhelpers.so:
-	cd lib && make
-
-cat/cat:
-	cd cat && make
-
-revwords/revwords:
-	cd revwords && make
-
-filter/filter:
-	cd filter && make
-
-bufcat/bufcat:
-	cd bufcat && make
-
-simplesh/simplesh:
-	cd simplesh && make
+all: 
+	for dir in $(DIRS); do \
+		$(MAKE) -C $$dir; \
+	done
 
 clean:
-	cd cat && make clean
-	cd lib && make clean
-	cd revwords && make clean
-	cd filter && make clean
-	cd bufcat && make clean
-	cd simplesh && make clean
+	for dir in $(DIRS); do \
+		$(MAKE) -C $$dir clean; \
+	done

@@ -1,10 +1,15 @@
-all: simplesh
+CFLAGS = -Wall -std=gnu99 -g
+LIB_DIR = ../lib
+TARGET = filesender
 
-filesender: libhelpers 
-	gcc filesender.c -g -L../lib -I../lib -Wl,-rpath=../lib -std=gnu99 -lbufio -o filesender 
+all: $(TARGET)
+
+$(TARGET): libhelpers 
+	gcc $@.c -L$(LIB_DIR) -I$(LIB_DIR) -Wl,-rpath=$(LIB_DIR) $(CFLAGS) -lbufio -o $@ 
 
 libhelpers:
-	make -C ../lib
+	make -C $(LIB_DIR)
 
 clean:
-	rm -f ./filesender
+	rm -f ./$(TARGET)
+	rm -f ./zeros.bin

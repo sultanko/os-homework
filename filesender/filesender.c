@@ -1,119 +1,121 @@
 #include <stdlib.h>
-#include <helpers.h>
+#include <unistd.h>
 #include <bufio.h>
-
-#include <stdlib.h>
+#include <stdio.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <string.h>
+#include <errno.h>
 
 #define BUF_SIZE 4096
 
-#define FERROR(_X) if ((_X) == -1) { _exit(EXIT_FAILURE); }
+#define FERROR(_X) if ((_X) == -1) { exit(EXIT_FAILURE); }
 
-
-int main(int argc, char* argv[]) {
-    
-    struct buf_t* read_buffer = buf_new(BUF_SIZE);
-    char* buf = (char*)read_buffer->data;
-    int devNull = open("/dev/null", O_WRONLY);
-
-    while (1)
+void file_send(int sfd, int cfd, char* filename, struct sockaddr_storage* client)
+{
+    int file_fd = open(filename, O_RDONLY);
+    struct buf_t* buf = buf_new(BUF_SIZE);
+    ssize_t buf_size = -1;
+    for (;;)
     {
-        FERROR(write(STDOUT_FILENO, "$", 1));
-        int readed = -1;
-        while (readed == -1)
-        {
-            int cur_size = buf_fill(STDIN_FILENO, read_buffer, buf_size(read_buffer) + 1);
-            if (cur_size == 0)
-            {
-                readed = 0;
-                break;
-            }
-            FERROR(cur_size);
-            for (int i = 0; i < cur_size; ++i)
-            {
-                if (buf[i] == '\n')
-                {
-                    readed = i + 1;
-                    break;
-                }
-            }
-        }
-        if (readed == 0)
+        buf_size = buf_fill(file_fd, buf, 1);
+        if (buf_size == 0 || buf_size == -1)
         {
             break;
         }
-        FERROR(readed);
-        int countPrograms = 1;
-        for (int i = 0; i < readed; ++i)
-        {
-            if (buf[i] == '|')
-            {
-                ++countPrograms;
-            }
-        }
-        struct execargs_t* programs_array = (struct execargs_t*)malloc(sizeof(struct execargs_t) * countPrograms);
-        struct execargs_t** programs = (struct execargs_t**)malloc(sizeof(struct execargs_t*) * countPrograms);
-        int last_command_index = 0;
-        int last_args_index = 0;
-        int countArgs = 0;
-        char* program = NULL;
-        int index_program = 0;
-        for (int i = 0; i < readed; ++i)
-        {
-            if (buf[i] == ' ')
-            {
-                buf[i] = '\0';
-            }
-            if (buf[i] == '|' || buf[i] == '\n')
-            {
-                buf[i] = '\0';
-                countArgs = (last_command_index == 0 && buf[0] != '\0') ? 1 : 0;
-                for (int j = last_command_index; j < i; ++j)
-                {
-                    if (j > 0 && buf[j - 1] == '\0' && buf[j] != '\0')
-                    {
-                        countArgs++;
-                    }
-                }
-                // dprintf(STDERR_FILENO, "Count args %d\n", countArgs);
-                char** command_args = (char**) malloc(sizeof(char*)*(countArgs+1));
-                command_args[countArgs] = NULL;
-                last_args_index = last_command_index;
-                countArgs = 0;
-                for (int j = last_command_index; j <= i; ++j)
-                {
-                    if (buf[j] == '\0' && j > 0 && buf[j-1] != '\0')
-                    {
-                        command_args[countArgs++] = buf + last_args_index;
-                    }
-                    if (buf[j] == '\0')
-                    {
-                        last_args_index = j + 1;
-                    }
-                }
-                struct execargs_t* cur_program = programs_array + index_program;
-                cur_program->command = command_args[0];
-                cur_program->args = command_args;
-                programs[index_program++] = cur_program;
-                countArgs = 0;
-                last_command_index = i;
-                while (last_command_index < readed && 
-                        (buf[last_command_index] == ' ' 
-                         || buf[last_command_index] == '|'
-                         || buf[last_command_index] == '\0'))
-                {
-                    ++last_command_index;
-                }
-            }
-        }
-        int result = runpiped(programs, index_program);
-        FERROR(buf_flush(devNull, read_buffer, readed));
-        // dprintf(STDOUT_FILENO, "Result runpiped %d\n", result);
+        buf_flush(cfd, buf, buf_size);
     }
-    buf_free(read_buffer);
-    close(devNull);
-    exit(EXIT_SUCCESS);
+    buf_free(buf);
+    close(file_fd);
+    close(cfd);
+}
+
+
+int main(int argc, char* argv[]) {
+    if (argc != 3)
+    {
+        dprintf(STDERR_FILENO, "Usage: port filename\n");
+        exit(EXIT_FAILURE);
+    }
+    char* const port = argv[1];
+    char *const filename = argv[2];
+    struct addrinfo hints;
+    struct addrinfo *result, *rp;
+    int sfd, s;
+
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
+    hints.ai_socktype = SOCK_STREAM; /* Datagram socket */
+    hints.ai_flags = AI_PASSIVE;    /* For wildcard IP address */
+    hints.ai_protocol = 0;          /* Any protocol */
+    hints.ai_canonname = NULL;
+    hints.ai_addr = NULL;
+    hints.ai_next = NULL;
+
+    s = getaddrinfo(NULL, port, &hints, &result);
+    if (s != 0) {
+        exit(EXIT_FAILURE);
+    }
+
+   /* getaddrinfo() returns a list of address structures.
+       Try each address until we successfully bind(2).
+       If socket(2) (or bind(2)) fails, we (close the socket
+       and) try the next address. */
+
+   for (rp = result; rp != NULL; rp = rp->ai_next) {
+        sfd = socket(rp->ai_family, rp->ai_socktype,
+                rp->ai_protocol);
+        if (sfd == -1)
+        {
+            continue;
+        }
+
+       if (bind(sfd, rp->ai_addr, rp->ai_addrlen) == 0)
+       {
+            break;                  
+       }
+
+       close(sfd);
+    }
+
+
+   if (rp == NULL) {               /* No address succeeded */
+        exit(EXIT_FAILURE);
+   }
+
+   FERROR(listen(sfd, -1));
+
+   freeaddrinfo(result);           /* No longer needed */
+
+    struct sockaddr_storage client;
+    socklen_t client_len = sizeof(client);
+    for (;;) {
+        int cfd = accept(sfd, (struct sockaddr*)&client, &client_len);
+        if (cfd == -1)
+        {
+            if (errno == EAGAIN)
+            {
+                continue;
+            }
+            close(sfd);
+            exit(EXIT_FAILURE);
+        }
+        pid_t childPid = -1;
+        switch (childPid = fork())
+        {
+            case -1:
+                break;
+            case 0:
+                file_send(sfd, cfd, filename, &client);
+                break;
+            default:
+                close(cfd);
+                break;
+        }
+    }
 }
 
 
