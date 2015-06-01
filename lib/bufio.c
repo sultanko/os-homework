@@ -71,12 +71,16 @@ ssize_t buf_flush(int fd, struct buf_t *buf, size_t required)
 {
     CHECK
     size_t totalWritten = 0;
+    if (required > buf->size)
+    {
+        return -1;
+    }
     while (totalWritten < required && buf->size > 0)
     {
         ssize_t written = write(fd, buf->data + totalWritten, buf->size);
         if (written == -1)
         {
-            memcpy(buf, buf + totalWritten, buf->size);
+            memmove(buf, buf + totalWritten, buf->size);
             return -1;
         }
         totalWritten += written;
@@ -84,7 +88,7 @@ ssize_t buf_flush(int fd, struct buf_t *buf, size_t required)
     }
     if (buf->size > 0)
     {
-        memcpy(buf, buf + totalWritten, buf->size);
+        memmove(buf, buf + totalWritten, buf->size);
     }
     return totalWritten;
 }

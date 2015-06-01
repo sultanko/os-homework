@@ -1,10 +1,14 @@
-all: simplesh
+CFLAGS = -Wall -std=gnu99 -g
+LIB_DIR = ../lib
+TARGET = simplesh
 
-simplesh: libhelpers 
-	gcc simplesh.c -g -L../lib -I../lib -Wl,-rpath=../lib -std=gnu99 -lhelpers -lbufio -o simplesh 
+all: $(TARGET)
+
+$(TARGET): libhelpers 
+	gcc $@.c -L$(LIB_DIR) -I$(LIB_DIR) -Wl,-rpath=$(LIB_DIR) $(CFLAGS) -lbufio -lhelpers -o $@ 
 
 libhelpers:
-	make -C ../lib
+	make -C $(LIB_DIR)
 
 clean:
-	rm -f ./simplesh
+	rm -f ./$(TARGET)

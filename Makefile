@@ -1,6 +1,6 @@
 DIRS = lib cat revwords filter \
 	   bufcat simplesh filesender \
-	   bipipe
+	   bipiper
 
 all: 
 	for dir in $(DIRS); do \

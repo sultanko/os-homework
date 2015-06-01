@@ -1,5 +1,6 @@
 #include "helpers.h"
 #include <sys/wait.h>
+#include <stdio.h>
 #include <errno.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -8,10 +9,9 @@
 
 #define RERROR(_X) \
     if (_X == -1) { \
-        kill(0, SIGINT); \
-        free(childPid); \
+        if (sigint_catched_runpipe == 0) { kill(0, SIGINT); } \
         sigaction(SIGINT, &old_action, NULL); \
-        return (sigint_catched == 1 ? 0 : -1); \
+        return (sigint_catched_runpipe == 0 ? -1 : 0); \
     }
 
 ssize_t read_(int fd, void* buf, size_t count) 
@@ -108,33 +108,24 @@ int spawn(const char* file, char* const argv[])
 int exec(struct execargs_t* program)
 {
     pid_t childPid = -1;
-    // dprintf(STDERR_FILENO, "Exec command %s\n", program->command);
-    // int i = -1;
-    // do
-    // {
-    //     ++i;
-    //     dprintf(STDERR_FILENO, "Exec arg %s\n", program->args[i]);
-    // } while (program->args[i] != NULL);
 
     switch (childPid = fork()) {
         case -1:
-            // dprintf(STDERR_FILENO, "Forked errno %d\n", errno);
             break;
         case 0:
             execvp(program->command, program->args);
-            break;
+            exit(EXIT_FAILURE);
     }
-    // dprintf(STDERR_FILENO, "Forked errno %d\n", errno);
     return childPid;
 }
 
-int sigint_catched = 0;
+int sigint_catched_runpipe = 0;
 
-void sig_handler(int signo)
+void sig_handler_runpiped(int signo)
 {
     if (signo == SIGINT)
     {
-        sigint_catched = 1;
+        sigint_catched_runpipe = 1;
         while (wait(NULL) != -1)
         {
         }
@@ -145,68 +136,48 @@ int runpiped(struct execargs_t** programs, size_t n)
 {
     struct sigaction new_action;
     struct sigaction old_action;
-    new_action.sa_handler = sig_handler;
+    new_action.sa_handler = sig_handler_runpiped;
     sigemptyset(&new_action.sa_mask);
     new_action.sa_flags = 0;
-    sigint_catched = 0;
+    sigint_catched_runpipe = 0;
     sigaction(SIGINT, &new_action, &old_action);
     int pipefd[2];
-    int* childPid = (int*)malloc(sizeof(int*) * n);
     int default_stdin = dup(STDIN_FILENO);
     int default_stdout = dup(STDOUT_FILENO);
     for (size_t i = 0; i < n; ++i)
     {
         if (i != 0)
         {
-            // dprintf(STDERR_FILENO, "Check read dup\n");
             RERROR(dup2(pipefd[0], STDIN_FILENO));
-            // dprintf(STDERR_FILENO, "Check close read\n");
             RERROR(close(pipefd[0]));
         }
 
         if (i != n - 1)
         {
-            // dprintf(STDERR_FILENO, "Check create pipe\n");
-            RERROR(pipe2(pipefd, O_CLOEXEC));
-            // dprintf(STDERR_FILENO, "Check write dup\n");
+            RERROR(pipe2(pipefd, O_CLOEXEC))
             RERROR(dup2(pipefd[1], STDOUT_FILENO));
-            // dprintf(STDERR_FILENO, "Check close write\n");
             RERROR(close(pipefd[1]));
         }
         else
         {
-            // dprintf(STDERR_FILENO, "Check dup stdout\n");
             RERROR(dup2(default_stdout, STDOUT_FILENO));
         }
-        childPid[i] = exec(programs[i]);
-        // dprintf(STDERR_FILENO, "Check exec\n");
-        RERROR(childPid[i]);
+        RERROR(exec(programs[i]));
     }
-    // dprintf(STDERR_FILENO, "Check dup stdin\n");
     RERROR(dup2(default_stdin, STDIN_FILENO));
-    size_t countPrograms = 0;
-    while (countPrograms < n)
+    size_t dead_childs = 0;
+    int status = 0;
+    int result = 0;
+    while (dead_childs < n)
     {
-        int cpid = wait(NULL);
-        // dprintf(STDERR_FILENO, "Check wait %d\n", cpid);
+        int cpid = wait(&status);
         RERROR(cpid);
-        for (size_t i = 0; i < n; ++i)
+        if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
         {
-            if (cpid == childPid[i])
-            {
-                childPid[i] = -1;
-                for (size_t j = 0; j < i; ++j)
-                {
-                    if (childPid[j] != -1)
-                    {
-                        kill(childPid[j], SIGINT); 
-                    }
-                }
-            }
+            result = -1;
         }
-        ++countPrograms;
+        ++dead_childs;
     }
-    sigaction(SIGINT, &old_action, NULL); \
-    free(childPid);
-    return 0;
+    sigaction(SIGINT, &old_action, NULL);
+    return result;
 }
