@@ -1,6 +1,6 @@
 CFLAGS = -Wall -std=gnu99 -g
 LIB_DIR = ../lib
-TARGET = forking
+TARGET = forking polling
 SOURCE = $(TARGET:%=%.c)
 
 all: $(TARGET)
