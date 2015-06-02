@@ -11,6 +11,7 @@
 #include <bufio.h>
 #include <stdio.h>
 #include <sys/wait.h>
+#include <poll.h>
 
 #define BUF_SIZE 4096
 
@@ -159,6 +160,16 @@ void set_sig_handler()
     sigaction(SIGCHLD, &new_action, NULL);
 }
 
+typedef struct {
+    char* buf1;
+    char* buf2;
+} pair_buffers_t;
+
+struct pollfd fds[256];
+pair_buffers_t buffs[127];
+int client_size;
+
+
 int main(int argc, char* argv[]) {
     if (argc != 3)
     {
@@ -174,6 +185,15 @@ int main(int argc, char* argv[]) {
     EXIT_IF(sfd2 == -1)
 
     for (;;) {
+        int count = poll(fds, client_size, 1000);
+        if (count == 0)
+        {
+            continue;
+        }
+        if (count == -1)
+        {
+            break;
+        }
         int cfd1 = get_client(sfd1);
         if (cfd1 == 0) continue;
         int cfd2 = get_client(sfd2);

@@ -19,40 +19,21 @@
 
 #define PRINT_DEBUG(_X) printf("Var %s = %d\n", #_X, _X)
 
-int resend_data(int fromfd, int tofd)
+void resend_data(int fromfd, int tofd)
 {
-    int exit_status = EXIT_SUCCESS;
     struct buf_t* buf = buf_new(BUF_SIZE);
-    if (buf == NULL)
-    {
-        exit_status = -1;
-        goto close_sockets;
-    }
-    ssize_t readed = -1;
+    EXIT_IF(buf == NULL);
     for (;;)
     {
-        readed = buf_fill(fromfd, buf, 1);
-        if (readed == -1)
-        {
-            exit_status = EXIT_FAILURE;
-            break;
-        }
+        ssize_t readed = buf_fill(fromfd, buf, 1);
+        EXIT_IF(readed == -1);
         if (readed == 0)
         {
-            break;
+            exit(EXIT_SUCCESS);
         }
         ssize_t written = buf_flush(tofd, buf, 1);
-        if (written == -1)
-        {
-            exit_status = EXIT_FAILURE;
-            break;
-        }
+        EXIT_IF(written == -1);
     }
-    buf_free(buf);
-close_sockets:
-    close(fromfd);
-    close(tofd);
-    return exit_status;
 }
 
 int bipipe(int cfd1, int cfd2)
@@ -65,7 +46,7 @@ int bipipe(int cfd1, int cfd2)
             result = -1;
             goto bipipe_end;
         case 0:
-            exit(resend_data(cfd1, cfd2));
+            resend_data(cfd1, cfd2);
             break;
     }
     switch (fork())
@@ -75,7 +56,7 @@ int bipipe(int cfd1, int cfd2)
             result = -1;
             goto bipipe_end;
         case 0:
-            exit(resend_data(cfd2, cfd1));
+            resend_data(cfd2, cfd1);
     }
 bipipe_end:
     close(cfd1);
@@ -91,7 +72,7 @@ int listen_port(char* port)
 
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
-    hints.ai_socktype = SOCK_STREAM; /* Datagram socket */
+    hints.ai_socktype = SOCK_STREAM; /* tcp socket */
 
     s = getaddrinfo("localhost", port, &hints, &result);
     RET_IF(s != 0)
@@ -119,7 +100,7 @@ int listen_port(char* port)
     }
     RET_IF(rp == NULL)
 
-    freeaddrinfo(result);           /* No longer needed */
+    freeaddrinfo(result);
 
     RET_IF(listen(sfd, SOMAXCONN) == -1)
     return sfd;

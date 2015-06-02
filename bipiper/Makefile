@@ -12,5 +12,5 @@ libhelpers:
 	make -C $(LIB_DIR)
 
 clean:
-	rm -f ./$(TARGET)
-	rm -f ./*.bin
+	rm -f ./forking
+	rm -f ./polling
