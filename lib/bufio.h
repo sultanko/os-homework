@@ -8,7 +8,7 @@ struct buf_t
 {
     size_t size;
     size_t capacity;
-    void* data;
+    char* data;
 };
 
 struct buf_t* buf_new(size_t capacity);

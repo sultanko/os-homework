@@ -17,29 +17,38 @@
 void file_send(int sfd, int cfd, char* filename, struct sockaddr_storage* client)
 {
     int file_fd = open(filename, O_RDONLY);
+    if (file_fd == -1)
+    {
+        goto close_sockets;
+    }
     struct buf_t* buf = buf_new(BUF_SIZE);
+    if (buf == NULL)
+    {
+        goto close_file;
+    }
     ssize_t buf_size = -1;
     for (;;)
     {
         buf_size = buf_fill(file_fd, buf, 1);
         if (buf_size == 0 || buf_size == -1)
         {
-            break;
+            goto clear_buf;
         }
-        buf_flush(cfd, buf, buf_size);
+        if (buf_flush(cfd, buf, 1) == -1)
+        {
+            goto clear_buf;
+        }
     }
+clear_buf:
     buf_free(buf);
+close_file:
     close(file_fd);
+close_sockets:
     close(cfd);
 }
 
 
 int main(int argc, char* argv[]) {
-    if (argc != 3)
-    {
-        dprintf(STDERR_FILENO, "Usage: port filename\n");
-        exit(EXIT_FAILURE);
-    }
     char* const port = argv[1];
     char *const filename = argv[2];
     struct addrinfo hints;
@@ -98,6 +107,7 @@ int main(int argc, char* argv[]) {
         {
             if (errno == EAGAIN)
             {
+                errno = 0;
                 continue;
             }
             close(sfd);

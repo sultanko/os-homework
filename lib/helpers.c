@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "helpers.h"
 #include <sys/wait.h>
 #include <stdio.h>
@@ -21,7 +22,7 @@ ssize_t read_(int fd, void* buf, size_t count)
     ssize_t readCount = 0;
     while (readed < count)
     {
-        readCount = read(fd, buf + readed, count - readed);
+        readCount = read(fd, (char*)buf + readed, count - readed);
         if (readCount == -1) 
         {
             return -1;
@@ -41,7 +42,7 @@ ssize_t write_(int fd, void* buf, size_t count)
     ssize_t writeCount = 0;
     while (writted < count)
     {
-        writeCount = write(fd, buf + writted, count - writted);
+        writeCount = write(fd, (char*)buf + writted, count - writted);
         if (writeCount == -1)
         {
             return -1;
