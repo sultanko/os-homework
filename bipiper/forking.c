@@ -21,19 +21,32 @@
 
 void resend_data(int fromfd, int tofd)
 {
+    int exit_code = EXIT_SUCCESS;
     struct buf_t* buf = buf_new(BUF_SIZE);
-    EXIT_IF(buf == NULL);
+    if (buf == NULL) { goto close_sockets; }
     for (;;)
     {
         ssize_t readed = buf_fill(fromfd, buf, 1);
-        EXIT_IF(readed == -1);
+        if (readed == -1) 
+        { 
+            exit_code = EXIT_FAILURE;
+            goto close_sockets; 
+        }
         if (readed == 0)
         {
-            exit(EXIT_SUCCESS);
+            goto close_sockets;
         }
         ssize_t written = buf_flush(tofd, buf, 1);
-        EXIT_IF(written == -1);
+        if (written == -1) 
+        { 
+            exit_code = EXIT_FAILURE;
+            goto close_sockets; 
+        }
     }
+close_sockets:
+    shutdown(fromfd, SHUT_RD);
+    shutdown(tofd, SHUT_WR);
+    exit(exit_code);
 }
 
 int bipipe(int cfd1, int cfd2)
