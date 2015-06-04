@@ -243,16 +243,19 @@ int main(int argc, char* argv[]) {
         if (fds_size < MAX_FDS_SIZE && (fds[state].revents & POLLIN))
         {
             int client_fd = get_client(fds[state].fd);
-            if (state == 0)
+            if (client_fd != 0)
             {
-                cfd1 = client_fd;
+                if (state == 0)
+                {
+                    cfd1 = client_fd;
+                }
+                else
+                {
+                    // printf("Accepted %d %d\n", cfd1, client_fd);
+                    add_clients(cfd1, client_fd);
+                }
+                state = state ^ 1;
             }
-            else
-            {
-                // printf("Accepted %d %d\n", cfd1, client_fd);
-                add_clients(cfd1, client_fd);
-            }
-            state = state ^ 1;
         }
         for (int i = 2; i < fds_size; ++i)
         {
