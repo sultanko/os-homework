@@ -46,7 +46,11 @@ int listen_port(char* port)
             continue;
         }
         int yes = 1;
-        setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+        if (setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
+        {
+            close(sfd);
+            continue;
+        }
 
         if (bind(sfd, rp->ai_addr, rp->ai_addrlen) == 0)
         {
@@ -83,11 +87,10 @@ int make_non_blocking(int fd)
     return 0;
 }
 
-void sig_handler_forking(int signo)
+void sig_handler_ignore(int signo)
 {
-    if (signo == SIGCHLD)
+    if (signo == SIGPIPE)
     {
-        wait(NULL);
         return;
     }
 }
@@ -95,17 +98,19 @@ void sig_handler_forking(int signo)
 void set_sig_handler()
 {
     struct sigaction new_action;
-    new_action.sa_handler = sig_handler_forking;
+    new_action.sa_handler = sig_handler_ignore;
     sigemptyset(&new_action.sa_mask);
     new_action.sa_flags = 0;
-    sigaction(SIGCHLD, &new_action, NULL);
+    sigaction(SIGPIPE, &new_action, NULL);
 }
 
 typedef struct {
     struct buf_t* buf[2];
+    int can_read[2];
 } pair_buffers_t;
 
-struct pollfd fds[256];
+#define MAX_FDS_SIZE 256
+struct pollfd fds[MAX_FDS_SIZE];
 pair_buffers_t buffs[127];
 int fds_size;
 
@@ -113,18 +118,97 @@ void add_clients(int cfd1, int cfd2)
 {
     buffs[fds_size/2 - 1].buf[0] = buf_new(BUF_SIZE);
     buffs[fds_size/2 - 1].buf[1] = buf_new(BUF_SIZE);
+    buffs[fds_size/2 - 1].can_read[0] = 1;
+    buffs[fds_size/2 - 1].can_read[1] = 1;
+    memset(&fds[fds_size], 0, sizeof(struct pollfd));
     fds[fds_size].fd = cfd1;
-    fds[fds_size].events = POLLIN | POLLHUP;
+    fds[fds_size].events = POLLIN;
     ++fds_size;
+    memset(&fds[fds_size], 0, sizeof(struct pollfd));
     fds[fds_size].fd = cfd2;
-    fds[fds_size].events = POLLIN | POLLHUP;
+    fds[fds_size].events = POLLIN;
     ++fds_size;
 }
+
+int abs(int value)
+{
+    return value < 0 ? -value : value;
+}
+
+void try_read(int i)
+{
+    if ((fds[i].revents & POLLIN) && buffs[(i>>1) - 1].can_read[i&1] == 1)
+    {
+        // printf("POLLIN on %d\n", fds[i].fd);
+        int index = (i>>1) - 1;
+        struct buf_t* buf = buffs[index].buf[i&1];
+        if (buf == NULL) { return; }
+        int old_size = buf_size(buf);
+        if (buf_fill(fds[i].fd, buf, old_size + 1) <= old_size) 
+        { 
+            shutdown(fds[i].fd, SHUT_RD);
+            fds[i].events &= ~POLLIN;
+            buffs[index].can_read[i&1] = 0;
+            if (buf_size(buf) == 0)
+            {
+                buf_free(buf);
+                buffs[index].buf[i&1] = NULL;
+            }
+            return;
+        }
+        if (buf_size(buf) == buf_capacity(buf))
+        {
+            fds[i].events &= ~POLLIN;
+        }
+        if (buf_size(buf) > 0)
+        {
+            fds[i^1].events |= POLLOUT;
+        }
+    }
+}
+
+void try_write(int i)
+{
+    if (fds[i].revents & POLLOUT)
+    {
+        // printf("POLLOUT on %d\n", fds[i].fd);
+        int index = (i>>1) - 1;
+        struct buf_t* buf = buffs[index].buf[(i&1)^1];
+        if (buf == NULL) { return; }
+        int flush_res = buf_flush(fds[i].fd, buf, 1);
+        // PRINT_DEBUG(flush_res);
+        if (flush_res == -1) 
+        { 
+            shutdown(fds[i].fd, SHUT_WR);
+            shutdown(fds[i^1].fd, SHUT_RD);
+            fds[i].events &= ~POLLOUT;
+            fds[i^1].events &= ~POLLIN;
+            buf_free(buf);
+            buffs[index].buf[(i&1)^1] = NULL;
+            buffs[index].can_read[(i&1)^1] = 0;
+            return;
+        }
+        if (buf_size(buf) == 0)
+        {
+            fds[i].events &= ~POLLOUT;
+            if (buffs[index].can_read[(i&1)^1] == 0)
+            {
+                buf_free(buf);
+                buffs[index].buf[(i&1)^1] = NULL;
+            }
+        }
+        if (buf_size(buf) < buf_capacity(buf) && buffs[(i>>1) - 1].can_read[(i&1)^1] == 1)
+        {
+            fds[i^1].events |= POLLIN;
+        }
+    }
+}
+
 
 int main(int argc, char* argv[]) {
     if (argc != 3)
     {
-        dprintf(STDERR_FILENO, "Usage: port1 por2\n");
+        // dprintf(STDERR_FILENO, "Usage: port1 por2\n");
         exit(EXIT_FAILURE);
     }
     set_sig_handler();
@@ -143,16 +227,20 @@ int main(int argc, char* argv[]) {
     int state = 0;
     int cfd1 = -1;
     for (;;) {
-        int count = poll(fds, fds_size, 2000);
+        int count = poll(fds, fds_size, -1);
         if (count == 0)
         {
             continue;
         }
         if (count == -1)
         {
+            if (errno == EINTR)
+            {
+                continue;
+            }
             break;
         }
-        if (fds[state].revents & POLLIN)
+        if (fds_size < MAX_FDS_SIZE && (fds[state].revents & POLLIN))
         {
             int client_fd = get_client(fds[state].fd);
             if (state == 0)
@@ -161,6 +249,7 @@ int main(int argc, char* argv[]) {
             }
             else
             {
+                // printf("Accepted %d %d\n", cfd1, client_fd);
                 add_clients(cfd1, client_fd);
             }
             state = state ^ 1;
@@ -170,45 +259,36 @@ int main(int argc, char* argv[]) {
             if ((fds[i].revents & POLLHUP)
                     || (fds[i].revents & POLLERR))
             {
-closing_client_pair:
-                close(fds[i].fd);
-                close(fds[i^1].fd);
+                // if error occur on one of socket pair
+                // close both sockets
+                // printf("POLLHUP on %d\n", fds[i].fd);
+                shutdown(abs(fds[i].fd), SHUT_RDWR);
+                int index = (i>>1) - 1;
+                if (buffs[index].buf[(i&1)^1] != NULL) { buf_free(buffs[index].buf[(i&1)^1]);} 
+                buffs[index].buf[(i&1)^1] = NULL;
+                buffs[index].can_read[i&1] = 0;
                 fds[i].fd = -fds[i].fd;
-                fds[i^1].fd = -fds[i^1].fd;
-                if ((i&1) == 0)
-                {
-                    ++i;
-                }
                 continue;
             }
-            if (fds[i].revents & POLLIN)
-            {
-                struct buf_t* buf = buffs[i/2 - 1].buf[i&1];
-                int old_size = buf_size(buf);
-                if (buf_fill(fds[i].fd, buf, old_size + 1) <= old_size) { goto closing_client_pair; }
-                if (buf_size(buf) == buf_capacity(buf))
-                {
-                    fds[i].events ^= POLLIN;
-                }
-                if (buf_size(buf) > 0)
-                {
-                    fds[i^1].events |= POLLOUT;
-                }
-            }
-            if (fds[i].revents & POLLOUT)
-            {
-                struct buf_t* buf = buffs[i/2 - 1].buf[(i&1)^1];
-                if (buf_flush(fds[i].fd, buf, 1) == -1) { goto closing_client_pair; }
-                if (buf_size(buf) == 0)
-                {
-                    fds[i].events ^= POLLOUT;
-                }
-            }
+            try_read(i);
+            try_write(i);
         }
         for (int i = 2; i < fds_size; i+=2)
         {
-            if (fds[i].fd < 0)
+            int buffs_index = (i>>1) - 1;
+            // printf("Read status %d %d\n", buffs[buffs_index].can_read[0], buffs[buffs_index].can_read[1]);
+            if ((buffs[buffs_index].can_read[0] == 0 
+                    && buffs[buffs_index].can_read[1] == 0
+                    && buffs[buffs_index].buf[0] == NULL
+                    && buffs[buffs_index].buf[1] == NULL)
+                    || fds[i].fd < 0
+                    || fds[i^1].fd < 0
+               )
             {
+                close(abs(fds[i].fd));
+                close(abs(fds[i+1].fd));
+                if (buffs[buffs_index].buf[0] != NULL) { buf_free(buffs[buffs_index].buf[0]);} 
+                if (buffs[buffs_index].buf[1] != NULL) { buf_free(buffs[buffs_index].buf[1]);} 
                 fds[i] = fds[fds_size - 2];
                 fds[i+1] = fds[fds_size - 1];
                 fds_size -= 2;
