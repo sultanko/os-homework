@@ -86,8 +86,9 @@ int listen_port(char* port)
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
     hints.ai_socktype = SOCK_STREAM; /* tcp socket */
+    hints.ai_flags = AI_PASSIVE;
 
-    s = getaddrinfo("localhost", port, &hints, &result);
+    s = getaddrinfo(NULL, port, &hints, &result);
     RET_IF(s != 0)
 
     for (rp = result; rp != NULL; rp = rp->ai_next) {
