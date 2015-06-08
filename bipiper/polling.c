@@ -68,6 +68,13 @@ int listen_port(char* port)
     return sfd;
 }
 
+int make_non_blocking(int fd)
+{
+    int opts = fcntl(fd, F_GETFL, 0);
+    RET_IF(fcntl(fd, F_SETFL, opts | O_NONBLOCK) < 0);
+    return 0;
+}
+
 int get_client(int sfd)
 {
     struct sockaddr_storage client;
@@ -78,14 +85,8 @@ int get_client(int sfd)
     {
         return 0;
     }
+    make_non_blocking(cfd);
     return cfd;
-}
-
-int make_non_blocking(int fd)
-{
-    int opts = fcntl(fd, F_GETFL, 0);
-    RET_IF(fcntl(fd, F_SETFL, opts | O_NONBLOCK) < 0);
-    return 0;
 }
 
 void sig_handler_ignore(int signo)
