@@ -80,7 +80,7 @@ ssize_t buf_flush(int fd, struct buf_t *buf, size_t required)
         ssize_t written = write(fd, buf->data + totalWritten, buf->size);
         if (written == -1)
         {
-            memmove(buf, buf + totalWritten, buf->size);
+            memmove(buf->data, buf->data + totalWritten, buf->size);
             return -1;
         }
         totalWritten += written;
@@ -88,7 +88,7 @@ ssize_t buf_flush(int fd, struct buf_t *buf, size_t required)
     }
     if (buf->size > 0)
     {
-        memmove(buf, buf + totalWritten, buf->size);
+        memmove(buf->data, buf->data + totalWritten, buf->size);
     }
     return totalWritten;
 }

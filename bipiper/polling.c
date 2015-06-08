@@ -178,7 +178,6 @@ void try_write(int i)
         struct buf_t* buf = buffs[index].buf[(i&1)^1];
         if (buf == NULL) { return; }
         int flush_res = buf_flush(fds[i].fd, buf, 1);
-        // PRINT_DEBUG(flush_res);
         if (flush_res == -1) 
         { 
             shutdown(fds[i].fd, SHUT_WR);
