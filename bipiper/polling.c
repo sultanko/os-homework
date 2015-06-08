@@ -13,7 +13,7 @@
 #include <sys/wait.h>
 #include <poll.h>
 
-#define BUF_SIZE 4096
+#define BUF_SIZE 65536
 
 #define EXIT_IF(_X) if ((_X) == 1) { exit(EXIT_FAILURE); }
 #define RET_IF(_X) if ((_X) == 1) { return -1; }
@@ -29,8 +29,9 @@ int listen_port(char* port)
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
     hints.ai_socktype = SOCK_STREAM; /* Datagram socket */
+    hints.ai_flags = AI_PASSIVE;
 
-    s = getaddrinfo("localhost", port, &hints, &result);
+    s = getaddrinfo(NULL, port, &hints, &result);
     RET_IF(s != 0)
 
    /* getaddrinfo() returns a list of address structures.
@@ -59,9 +60,9 @@ int listen_port(char* port)
 
         close(sfd);
     }
-    RET_IF(rp == NULL)
-
     freeaddrinfo(result);           /* No longer needed */
+
+    RET_IF(rp == NULL)
 
     RET_IF(listen(sfd, SOMAXCONN) == -1)
     return sfd;
@@ -139,7 +140,7 @@ void try_read(int i)
 {
     if ((fds[i].revents & POLLIN) && buffs[(i>>1) - 1].can_read[i&1] == 1)
     {
-        // printf("POLLIN on %d\n", fds[i].fd);
+        fprintf(stderr, "POLLIN on %d\n", fds[i].fd);
         int index = (i>>1) - 1;
         struct buf_t* buf = buffs[index].buf[i&1];
         if (buf == NULL) { return; }
@@ -171,7 +172,7 @@ void try_write(int i)
 {
     if (fds[i].revents & POLLOUT)
     {
-        // printf("POLLOUT on %d\n", fds[i].fd);
+        fprintf(stderr,"POLLOUT on %d\n", fds[i].fd);
         int index = (i>>1) - 1;
         struct buf_t* buf = buffs[index].buf[(i&1)^1];
         if (buf == NULL) { return; }
@@ -208,7 +209,7 @@ void try_write(int i)
 int main(int argc, char* argv[]) {
     if (argc != 3)
     {
-        // dprintf(STDERR_FILENO, "Usage: port1 por2\n");
+        fprintf(stderr, "Usage: port1 por2\n");
         exit(EXIT_FAILURE);
     }
     set_sig_handler();
@@ -220,7 +221,6 @@ int main(int argc, char* argv[]) {
     make_non_blocking(fds[0].fd);
     fds[1].fd = listen_port(port2);
     EXIT_IF(fds[1].fd == -1);
-    fds[1].events = POLLIN;
     make_non_blocking(fds[1].fd);
     fds_size = 2;
 
@@ -251,10 +251,12 @@ int main(int argc, char* argv[]) {
                 }
                 else
                 {
-                    // printf("Accepted %d %d\n", cfd1, client_fd);
+                    fprintf(stderr, "Accepted %d %d\n", cfd1, client_fd);
                     add_clients(cfd1, client_fd);
                 }
+                fds[state].events &= ~POLLIN;
                 state = state ^ 1;
+                fds[state].events |= POLLIN;
             }
         }
         for (int i = 2; i < fds_size; ++i)
@@ -264,7 +266,7 @@ int main(int argc, char* argv[]) {
             {
                 // if error occur on one of socket pair
                 // close both sockets
-                // printf("POLLHUP on %d\n", fds[i].fd);
+                fprintf(stderr, "POLLHUP on %d\n", fds[i].fd);
                 shutdown(abs(fds[i].fd), SHUT_RDWR);
                 int index = (i>>1) - 1;
                 if (buffs[index].buf[(i&1)^1] != NULL) { buf_free(buffs[index].buf[(i&1)^1]);} 
@@ -279,21 +281,14 @@ int main(int argc, char* argv[]) {
         for (int i = 2; i < fds_size; i+=2)
         {
             int buffs_index = (i>>1) - 1;
-            // printf("Read status %d %d\n", buffs[buffs_index].can_read[0], buffs[buffs_index].can_read[1]);
-            if ((buffs[buffs_index].can_read[0] == 0 
-                    && buffs[buffs_index].can_read[1] == 0
-                    && buffs[buffs_index].buf[0] == NULL
+            if (buffs[buffs_index].buf[0] == NULL
                     && buffs[buffs_index].buf[1] == NULL)
-                    || fds[i].fd < 0
-                    || fds[i^1].fd < 0
-               )
             {
                 close(abs(fds[i].fd));
                 close(abs(fds[i+1].fd));
-                if (buffs[buffs_index].buf[0] != NULL) { buf_free(buffs[buffs_index].buf[0]);} 
-                if (buffs[buffs_index].buf[1] != NULL) { buf_free(buffs[buffs_index].buf[1]);} 
                 fds[i] = fds[fds_size - 2];
                 fds[i+1] = fds[fds_size - 1];
+                buffs[buffs_index] = buffs[(fds_size>>1)-2];
                 fds_size -= 2;
             }
         }
